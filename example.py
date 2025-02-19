@@ -4,6 +4,11 @@ from dilithium.sign import Signer
 from dilithium.verify import Verifier
 import time
 import numpy as np
+from dilithium.chaos import HybridEncryption
+from dilithium.monitoring.metrics import MonitoringSystem
+from dilithium.monitoring.health import HealthCheck
+from dilithium.config import SecurityConfig
+from dilithium.gui import DilithiumGUI
 
 def print_key(name: str, key: dict):
     print(f"\n{name}:")
@@ -14,42 +19,18 @@ def print_key(name: str, key: dict):
             print(f"  {k}: {v[:20]}..." if isinstance(v, bytes) else f"  {k}: {v}")
 
 def main():
-    # Initialize with security level 3
+    # Initialize components
+    config = SecurityConfig()
     params = DilithiumParams.get_params(security_level=3)
+    hybrid = HybridEncryption(params)
     
-    # Generate keys
-    print("\nGenerating keys...")
-    start = time.time()
-    keygen = KeyGenerator(params)
-    public_key, private_key = keygen.generate_keypair()
-    print(f"Key generation: {(time.time() - start)*1000:.2f}ms")
+    # Setup monitoring
+    monitoring = MonitoringSystem(config)
+    health = HealthCheck(config, monitoring)
     
-    # Print keys
-    print_key("Public Key", public_key)
-    print_key("Private Key", private_key)
-    
-    # Create and sign message
-    message = b"Hello, Quantum-Resistant World!"
-    print(f"\nOriginal message: {message.decode()}")
-    
-    signer = Signer(params)
-    start = time.time()
-    signature = signer.sign(message, private_key)
-    print(f"Signing: {(time.time() - start)*1000:.2f}ms")
-    
-    # Print signature
-    mu, z = signature
-    print("\nSignature:")
-    print(f"  mu: {mu[:20]}...")
-    print(f"  z: array of shape {z.shape}, first few values: {z.flatten()[:5]}")
-    
-    # Verify signature
-    verifier = Verifier(params)
-    start = time.time()
-    is_valid = verifier.verify(message, signature, public_key)
-    print(f"Verification: {(time.time() - start)*1000:.2f}ms")
-    
-    print(f"\nSignature valid: {is_valid}")
+    # Launch GUI
+    gui = DilithiumGUI(hybrid, monitoring, health)
+    gui.run()
 
 if __name__ == "__main__":
     main() 
