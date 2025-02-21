@@ -102,40 +102,89 @@ class LorenzEncryption:
 
 class HybridEncryption:
     """Combines Dilithium signatures with Lorenz encryption"""
-    keygen: KeyGenerator
     
     def __init__(self, dilithium_params: DilithiumParams):
         self.params = dilithium_params
         self.keygen = KeyGenerator(dilithium_params)
         self.signer = Signer(dilithium_params)
         self.verifier = Verifier(dilithium_params)
-
+        
     def generate_keys(self) -> Tuple[Dict, Dict]:
-        """Generate Dilithium keypair"""
-        return self.keygen.generate_keypair()
+        """Generate Dilithium key pair"""
+        try:
+            print("Generating Dilithium key pair...")
+            # Generate key pair using Dilithium
+            public_key, private_key = self.keygen.generate_keypair()
+            
+            print(f"Generated public key with components: {list(public_key.keys())}")
+            print(f"Generated private key with components: {list(private_key.keys())}")
+            
+            return public_key, private_key
+            
+        except Exception as e:
+            raise RuntimeError(f"Key generation failed: {str(e)}")
 
     def encrypt_and_sign(self, message: bytes, private_key: Dict) -> Tuple[bytes, bytes, Tuple]:
         """Encrypt message and sign the ciphertext"""
-        # Initialize Lorenz with private key seed
-        lorenz = LorenzEncryption(private_key['seed'])
-        
-        # Encrypt message
-        ciphertext, nonce = lorenz.encrypt(message)
-        
-        # Sign ciphertext
-        signature = self.signer.sign(ciphertext, private_key)
-        
-        return ciphertext, nonce, signature
+        try:
+            # Initialize Lorenz with private key seed
+            lorenz = LorenzEncryption(private_key['seed'])
+            
+            # Log encryption process
+            print("Starting hybrid encryption process:")
+            print(f"1. Message size: {len(message)} bytes")
+            
+            # Encrypt message with Lorenz chaos
+            ciphertext, nonce = lorenz.encrypt(message)
+            print(f"2. Generated ciphertext size: {len(ciphertext)} bytes")
+            print(f"3. Generated nonce size: {len(nonce)} bytes")
+            
+            # Sign ciphertext using Dilithium
+            signature = self.signer.sign(ciphertext, private_key)
+            print("4. Generated Dilithium signature")
+            print(f"   - Mu size: {len(signature[0])} bytes")
+            print(f"   - Z shape: {signature[1].shape}")
+            
+            # Verify signature immediately as a check
+            if not self.verifier.verify(ciphertext, signature, private_key):
+                raise ValueError("Signature verification failed immediately after signing")
+            print("5. Verified signature successfully")
+            
+            return ciphertext, nonce, signature
+            
+        except Exception as e:
+            raise RuntimeError(f"Encryption failed: {str(e)}")
 
-    def verify_and_decrypt(self, ciphertext: bytes, nonce: bytes, signature: Tuple, 
-                          public_key: Dict) -> bytes:
+    def verify_and_decrypt(self, ciphertext: bytes, nonce: bytes, 
+                          signature: Tuple, public_key: Dict) -> bytes:
         """Verify signature and decrypt message"""
-        # Verify signature first
-        if not self.verifier.verify(ciphertext, signature, public_key):
-            raise ValueError("Signature verification failed")
-        
-        # Initialize Lorenz with public key seed
-        lorenz = LorenzEncryption(public_key['seed'])
-        
-        # Decrypt message
-        return lorenz.decrypt(ciphertext, nonce) 
+        try:
+            print("\nStarting hybrid decryption process:")
+            print(f"1. Received ciphertext size: {len(ciphertext)} bytes")
+            print(f"2. Received nonce size: {len(nonce)} bytes")
+            print("3. Verifying Dilithium signature...")
+            
+            # Verify signature first
+            if not self.verifier.verify(ciphertext, signature, public_key):
+                raise ValueError("Signature verification failed")
+            print("4. Signature verified successfully")
+            
+            # Initialize Lorenz with public key seed
+            lorenz = LorenzEncryption(public_key['seed'])
+            print("5. Initialized Lorenz system with public key seed")
+            
+            # Decrypt message
+            decrypted = lorenz.decrypt(ciphertext, nonce)
+            print(f"6. Decrypted message size: {len(decrypted)} bytes")
+            
+            # Verify decryption succeeded
+            try:
+                decrypted.decode('utf-8')
+                print("7. Successfully decoded message as UTF-8")
+            except UnicodeDecodeError:
+                raise ValueError("Decryption failed - output is not valid UTF-8")
+                
+            return decrypted
+            
+        except Exception as e:
+            raise RuntimeError(f"Decryption failed: {str(e)}") 

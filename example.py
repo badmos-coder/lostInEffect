@@ -12,6 +12,7 @@ from dilithium.network.protocol import CryptoNetworkProtocol, MessageSender
 from dilithium.security.audit import SecureAuditLog
 import tkinter as tk
 from tkinter import ttk, scrolledtext
+from datetime import datetime
 
 class DilithiumGUI:
     def __init__(self, hybrid: HybridEncryption, monitoring: MonitoringSystem, health: HealthCheck):
@@ -117,9 +118,29 @@ class DilithiumGUI:
             # Get message
             message = self.message_text.get('1.0', 'end-1c').encode()
             
+            self.output_text.insert('end', 
+                f"\nStarting encryption process for message of size {len(message)} bytes...\n")
+            
             # Encrypt and sign
+            start_time = datetime.now()
             ciphertext, nonce, signature = self.hybrid.encrypt_and_sign(
                 message, self.private_key)
+            end_time = datetime.now()
+            
+            self.output_text.insert('end',
+                f"Encryption completed in {(end_time-start_time).total_seconds():.3f} seconds\n")
+            self.output_text.insert('end',
+                f"Ciphertext size: {len(ciphertext)} bytes\n")
+            
+            # Verify encryption worked
+            try:
+                decrypted = self.hybrid.verify_and_decrypt(
+                    ciphertext, nonce, signature, self.public_key)
+                if decrypted != message:
+                    raise ValueError("Encryption verification failed")
+                self.output_text.insert('end', "Encryption verified successfully\n")
+            except Exception as e:
+                raise ValueError(f"Encryption verification failed: {str(e)}")
             
             # Get network settings
             host = self.host_entry.get()
@@ -135,7 +156,7 @@ class DilithiumGUI:
             self.sender.send_message(message_data)
             
             self.output_text.insert('end', 
-                f"\nMessage encrypted and sent to {host}:{port}\n")
+                f"Message encrypted and sent to {host}:{port}\n")
             self.output_text.see('end')
             
         except Exception as e:
@@ -165,6 +186,72 @@ class DilithiumGUI:
                 val_str = f"{v[:20]}..." if isinstance(v, bytes) else f"{v}"
                 self.output_text.insert('end', f"\n  {k}: {val_str}")
                 
+    def _handle_message(self, message_components):
+        """Handle received message with detailed decryption process"""
+        try:
+            # Unpack components
+            ciphertext, nonce, signature, public_key = message_components
+            
+            # Log decryption process
+            self.process_text.insert('end', 
+                f"\n[{datetime.now()}] Starting decryption process:\n")
+            
+            # Log signature verification
+            self.process_text.insert('end', "\n1. Verifying signature...\n")
+            self.process_text.insert('end', f"   Signature size: {len(signature[0])} bytes\n")
+            self.process_text.insert('end', f"   Public key components: {list(public_key.keys())}\n")
+            
+            # Log decryption
+            self.process_text.insert('end', "\n2. Decrypting message...\n")
+            self.process_text.insert('end', f"   Ciphertext size: {len(ciphertext)} bytes\n")
+            self.process_text.insert('end', f"   Nonce size: {len(nonce)} bytes\n")
+            
+            # Perform decryption
+            start_time = datetime.now()
+            decrypted = self.hybrid.verify_and_decrypt(
+                ciphertext, nonce, signature, public_key)
+            end_time = datetime.now()
+            
+            # Update message count and average time
+            process_time = (end_time - start_time).total_seconds()
+            self._message_count += 1
+            self._avg_time = ((self._avg_time * (self._message_count - 1)) + 
+                            process_time) / self._message_count
+            
+            # Log completion
+            self.process_text.insert('end', "\n3. Decryption completed successfully\n")
+            self.process_text.insert('end', 
+                f"   Time taken: {process_time:.3f} seconds\n")
+            self.process_text.insert('end',
+                f"   Original message size: {len(decrypted)} bytes\n")
+            
+            # Update statistics
+            self.stats_text.delete('1.0', 'end')
+            self.stats_text.insert('end', "Decryption Statistics:\n")
+            self.stats_text.insert('end', 
+                f"Messages processed: {self._message_count}\n")
+            self.stats_text.insert('end',
+                f"Average processing time: {self._avg_time:.3f} seconds\n")
+            self.stats_text.insert('end',
+                f"Last message size: {len(decrypted)} bytes\n")
+            
+            # Display decrypted message
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self.message_text.insert('end', 
+                f"\n[{timestamp}] Received message:\n{decrypted.decode()}\n")
+            self.message_text.see('end')
+            
+            self.status_var.set("Message received and decrypted successfully")
+            
+        except Exception as e:
+            error_msg = f"Error processing message: {str(e)}"
+            self.status_var.set(error_msg)
+            self.process_text.insert('end', f"\nError: {error_msg}\n")
+            
+        finally:
+            # Auto-scroll process log
+            self.process_text.see('end')
+            
     def run(self):
         """Start the GUI"""
         self.root.mainloop()
