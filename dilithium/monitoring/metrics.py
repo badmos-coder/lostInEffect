@@ -29,6 +29,16 @@ class MonitoringSystem:
         }
         self._lock = threading.Lock()
         
+        # Initialize with default metrics
+        self.record_metric(PerformanceMetrics(
+            latency_ms=0.0,
+            cpu_usage=0.0,
+            memory_usage=0.0,
+            queue_size=0,
+            error_rate=0.0,
+            throughput=0.0
+        ))
+        
     def record_metric(self, metric: PerformanceMetrics) -> None:
         """Record a new metric measurement"""
         with self._lock:
@@ -45,17 +55,42 @@ class MonitoringSystem:
     def get_statistics(self) -> Dict:
         """Calculate statistical metrics"""
         with self._lock:
+            if not self.metrics_history:
+                return {
+                    'mean': [0.0] * 6,
+                    'std': [0.0] * 6,
+                    'min': [0.0] * 6,
+                    'max': [0.0] * 6,
+                    'p95': [0.0] * 6,
+                    'p99': [0.0] * 6
+                }
+                
             metrics_array = np.array([
                 [m.latency_ms, m.cpu_usage, m.memory_usage, 
                  m.queue_size, m.error_rate, m.throughput]
                 for m in self.metrics_history
             ])
             
-            return {
-                'mean': np.mean(metrics_array, axis=0),
-                'std': np.std(metrics_array, axis=0),
-                'min': np.min(metrics_array, axis=0),
-                'max': np.max(metrics_array, axis=0),
-                'p95': np.percentile(metrics_array, 95, axis=0),
-                'p99': np.percentile(metrics_array, 99, axis=0)
-            } 
+            try:
+                return {
+                    'mean': np.mean(metrics_array, axis=0).tolist(),
+                    'std': np.std(metrics_array, axis=0).tolist(),
+                    'min': np.min(metrics_array, axis=0).tolist(),
+                    'max': np.max(metrics_array, axis=0).tolist(),
+                    'p95': np.percentile(metrics_array, 95, axis=0).tolist(),
+                    'p99': np.percentile(metrics_array, 99, axis=0).tolist()
+                }
+            except Exception as e:
+                # Fallback to default values if calculations fail
+                return {
+                    'mean': [0.0] * 6,
+                    'std': [0.0] * 6,
+                    'min': [0.0] * 6,
+                    'max': [0.0] * 6,
+                    'p95': [0.0] * 6,
+                    'p99': [0.0] * 6
+                }
+
+    def _trigger_alert(self, metric_name: str, value: float, threshold: float) -> None:
+        """Handle metric alerts"""
+        print(f"Alert: {metric_name} exceeded threshold. Value: {value}, Threshold: {threshold}") 
