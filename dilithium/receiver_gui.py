@@ -3,13 +3,13 @@ from tkinter import ttk, scrolledtext
 from typing import Dict, Tuple
 import threading
 from datetime import datetime
-from .network.protocol import CryptoNetworkProtocol, MessageReceiver
-from .security.audit import SecureAuditLog, AuditEvent
-from .monitoring.health import HealthCheck
-from .monitoring.metrics import MonitoringSystem
-from .config import SecurityConfig
-from .chaos import HybridEncryption
-from .core import DilithiumParams
+from dilithium.network.protocol import CryptoNetworkProtocol, MessageReceiver
+from dilithium.security.audit import SecureAuditLog, AuditEvent
+from dilithium.monitoring.health import HealthCheck
+from dilithium.monitoring.metrics import MonitoringSystem
+from dilithium.config import SecurityConfig
+from dilithium.chaos import HybridEncryption
+from dilithium.core import DilithiumParams
 import time
 import json
 
