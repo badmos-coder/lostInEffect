@@ -1,7 +1,7 @@
 ## Securing Next-Generation Biometric Systems
 
 ### PROBLEM STATEMENT
-Defending against vectors targeting next-generation biometric identification and authentication systems that withstand AI-powered threats.
+Defending against vectors targeting next-generation biometric identification and authentication systems that withstand AI-powered & quantum decryption threats.
 
 ### BUSINESS CONTEXT
 Biometric systems, driven by advancements in AI and machine learning, have evolved into robust tools for secure, efficient, and user-friendly authentication. Future systems will integrate multi-modal biometrics, edge computing, and real-time analytics to adapt to diverse and dynamic operational contexts. However, these advancements introduce novel attack surfaces. The fusion of AI capabilities with biometric systems presents opportunities for attackers to exploit system vulnerabilities, including adversarial manipulation, synthetic biometric data generation, and hardware-specific exploits. Proactively addressing these challenges is critical to safeguarding sensitive systems and ensuring the integrity of biometric identification and authentication mechanisms.
