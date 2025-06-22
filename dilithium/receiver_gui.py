@@ -1,8 +1,9 @@
 import tkinter as tk
-from tkinter import ttk, scrolledtext
+from tkinter import ttk, scrolledtext, filedialog, messagebox
 from typing import Dict, Tuple
 import threading
 from datetime import datetime
+import os
 from dilithium.network.protocol import CryptoNetworkProtocol, MessageReceiver
 from dilithium.security.audit import SecureAuditLog, AuditEvent
 from dilithium.monitoring.health import HealthCheck
@@ -21,8 +22,14 @@ class ReceiverGUI:
         
         # Initialize statistics counters
         self._message_count = 0
+        self._file_count = 0
         self._avg_time = 0.0
         self._total_time = 0.0
+        
+        # Create downloads directory
+        self.downloads_dir = os.path.join(os.getcwd(), "received_files")
+        if not os.path.exists(self.downloads_dir):
+            os.makedirs(self.downloads_dir)
         
         # Initialize components
         self.config = SecurityConfig()
@@ -56,16 +63,19 @@ class ReceiverGUI:
         
         # Create tabs
         self.messages_tab = ttk.Frame(self.notebook)
+        self.files_tab = ttk.Frame(self.notebook)
         self.decryption_tab = ttk.Frame(self.notebook)
         self.monitoring_tab = ttk.Frame(self.notebook)
         self.logs_tab = ttk.Frame(self.notebook)
         
         self.notebook.add(self.messages_tab, text='Messages')
+        self.notebook.add(self.files_tab, text='Files')
         self.notebook.add(self.decryption_tab, text='Decryption Process')
         self.notebook.add(self.monitoring_tab, text='System Monitoring')
         self.notebook.add(self.logs_tab, text='Audit Logs')
         
         self._setup_messages_tab()
+        self._setup_files_tab()
         self._setup_decryption_tab()
         self._setup_monitoring_tab()
         self._setup_logs_tab()
@@ -97,6 +107,66 @@ class ReceiverGUI:
         ttk.Button(button_frame, text="Stop Receiver",
                   command=self._stop_receiver).pack(side='left', padx=5)
                   
+    def _setup_files_tab(self):
+        # Status frame for files
+        file_status_frame = ttk.LabelFrame(self.files_tab, text="File Reception Status")
+        file_status_frame.pack(fill='x', padx=10, pady=5)
+        
+        self.file_status_var = tk.StringVar(value="No files received yet...")
+        ttk.Label(file_status_frame, 
+                 textvariable=self.file_status_var,
+                 font=('Helvetica', 10)).pack(padx=5, pady=5)
+        
+        # Downloads directory info
+        dir_frame = ttk.LabelFrame(self.files_tab, text="Download Directory")
+        dir_frame.pack(fill='x', padx=10, pady=5)
+        
+        dir_info_frame = ttk.Frame(dir_frame)
+        dir_info_frame.pack(fill='x', padx=5, pady=5)
+        
+        ttk.Label(dir_info_frame, text="Files saved to:").pack(side='left', padx=5)
+        ttk.Label(dir_info_frame, text=self.downloads_dir, 
+                 relief='sunken', font=('Courier', 9)).pack(side='left', padx=5, fill='x', expand=True)
+        ttk.Button(dir_info_frame, text="Open Folder",
+                  command=self._open_downloads_folder).pack(side='right', padx=5)
+        
+        # Received files list
+        files_frame = ttk.LabelFrame(self.files_tab, text="Received Files")
+        files_frame.pack(fill='both', expand=True, padx=10, pady=5)
+        
+        # Create treeview for file list
+        columns = ('Filename', 'Size', 'Type', 'Received', 'Status')
+        self.files_tree = ttk.Treeview(files_frame, columns=columns, show='headings', height=15)
+        
+        # Define column headings and widths
+        self.files_tree.heading('Filename', text='Filename')
+        self.files_tree.heading('Size', text='Size')
+        self.files_tree.heading('Type', text='Type')
+        self.files_tree.heading('Received', text='Received')
+        self.files_tree.heading('Status', text='Status')
+        
+        self.files_tree.column('Filename', width=200)
+        self.files_tree.column('Size', width=100)
+        self.files_tree.column('Type', width=80)
+        self.files_tree.column('Received', width=150)
+        self.files_tree.column('Status', width=100)
+        
+        # Add scrollbar
+        files_scrollbar = ttk.Scrollbar(files_frame, orient='vertical', command=self.files_tree.yview)
+        self.files_tree.configure(yscrollcommand=files_scrollbar.set)
+        
+        self.files_tree.pack(side='left', fill='both', expand=True, padx=5, pady=5)
+        files_scrollbar.pack(side='right', fill='y', pady=5)
+        
+        # File action buttons
+        file_button_frame = ttk.Frame(self.files_tab)
+        file_button_frame.pack(fill='x', padx=10, pady=5)
+        
+        ttk.Button(file_button_frame, text="Clear File List",
+                  command=self._clear_file_list).pack(side='left', padx=5)
+        ttk.Button(file_button_frame, text="Open Selected",
+                  command=self._open_selected_file).pack(side='left', padx=5)
+        
     def _setup_decryption_tab(self):
         # Decryption process display
         process_frame = ttk.LabelFrame(self.decryption_tab, 
@@ -153,6 +223,7 @@ class ReceiverGUI:
         filter_combo = ttk.Combobox(filter_frame, textvariable=self.filter_var,
                                   values=["ALL", "SYSTEM_INIT", "RECEIVER_START",
                                          "MESSAGE_RECEIVED", "MESSAGE_DECRYPTED",
+                                         "FILE_RECEIVED", "FILE_DECRYPTED",
                                          "RECEIVER_STOP", "RECEIVER_ERROR"])
         filter_combo.pack(side='left', padx=5)
         filter_combo.bind('<<ComboboxSelected>>', lambda e: self._refresh_logs())
@@ -209,15 +280,19 @@ class ReceiverGUI:
             # Schedule next update
             self.root.after(5000, self._update_monitoring)
             
-    def _handle_message(self, message_components):
-        """Handle received message with detailed decryption process"""
+    def _handle_message(self, data_type, components):
+        """Handle received data (message or file) with detailed decryption process"""
         try:
             # Unpack components
-            ciphertext, nonce, signature, public_key = message_components
+            ciphertext = components['ciphertext']
+            nonce = components['nonce'] 
+            signature = components['signature']
+            public_key = components['public_key']
             
             # Log decryption process
+            data_description = "file" if data_type == "file" else "message"
             self.process_text.insert('end', 
-                f"\n[{datetime.now()}] Starting decryption process:\n")
+                f"\n[{datetime.now()}] Starting {data_description} decryption process:\n")
             
             # Log signature verification
             self.process_text.insert('end', "\n1. Verifying signature...\n")
@@ -225,7 +300,7 @@ class ReceiverGUI:
             self.process_text.insert('end', f"   Public key components: {list(public_key.keys())}\n")
             
             # Log decryption
-            self.process_text.insert('end', "\n2. Decrypting message...\n")
+            self.process_text.insert('end', f"\n2. Decrypting {data_description}...\n")
             self.process_text.insert('end', f"   Ciphertext size: {len(ciphertext)} bytes\n")
             self.process_text.insert('end', f"   Nonce size: {len(nonce)} bytes\n")
             
@@ -237,52 +312,111 @@ class ReceiverGUI:
             
             # Update statistics
             process_time = end_time - start_time
-            self._message_count += 1
+            if data_type == "file":
+                self._file_count += 1
+            else:
+                self._message_count += 1
             self._total_time += process_time
-            self._avg_time = self._total_time / self._message_count
+            total_items = self._message_count + self._file_count
+            self._avg_time = self._total_time / total_items if total_items > 0 else 0
             
             # Log completion
-            self.process_text.insert('end', "\n3. Decryption completed successfully\n")
+            self.process_text.insert('end', f"\n3. {data_description.capitalize()} decryption completed successfully\n")
             self.process_text.insert('end', 
                 f"   Time taken: {process_time:.3f} seconds\n")
             self.process_text.insert('end',
-                f"   Original message size: {len(decrypted)} bytes\n")
+                f"   Original {data_description} size: {len(decrypted)} bytes\n")
             
             # Update statistics display
             self.stats_text.delete('1.0', 'end')
             self.stats_text.insert('end', "Decryption Statistics:\n")
             self.stats_text.insert('end', 
                 f"Messages processed: {self._message_count}\n")
+            self.stats_text.insert('end', 
+                f"Files processed: {self._file_count}\n")
             self.stats_text.insert('end',
                 f"Average processing time: {self._avg_time:.3f} seconds\n")
             self.stats_text.insert('end',
                 f"Total processing time: {self._total_time:.3f} seconds\n")
             self.stats_text.insert('end',
-                f"Last message size: {len(decrypted)} bytes\n")
+                f"Last {data_description} size: {len(decrypted)} bytes\n")
             
-            # Display decrypted message
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            self.message_text.insert('end', 
-                f"\n[{timestamp}] Received message:\n{decrypted.decode()}\n")
-            self.message_text.see('end')
-            
-            self.status_var.set("Message received and decrypted successfully")
-            
-            # Log event
-            self.audit_log.log_event(
-                AuditEvent(
-                    timestamp=datetime.now().timestamp(),
-                    event_type="MESSAGE_DECRYPTED",
-                    user_id="receiver",
-                    action="decrypt_message",
-                    status="SUCCESS",
-                    details={
-                        "message_size": len(decrypted),
-                        "process_time": process_time,
-                        "total_messages": self._message_count
-                    }
+            if data_type == "file":
+                # Handle file data
+                filename = components['filename']
+                file_size = components['file_size']
+                file_type = components.get('file_type', '')
+                
+                # Save file to downloads directory
+                safe_filename = self._get_safe_filename(filename)
+                file_path = os.path.join(self.downloads_dir, safe_filename)
+                
+                with open(file_path, 'wb') as f:
+                    f.write(decrypted)
+                
+                # Add to files tree
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                self.files_tree.insert('', 'end', values=(
+                    safe_filename,
+                    f"{file_size:,} bytes",
+                    file_type,
+                    timestamp,
+                    "Received"
+                ))
+                
+                self.file_status_var.set(f"File '{safe_filename}' received and decrypted successfully")
+                
+                # Display file info in message area
+                self.message_text.insert('end', 
+                    f"\n[{timestamp}] Received file: {safe_filename}\n")
+                self.message_text.insert('end', 
+                    f"File size: {file_size:,} bytes\n")
+                self.message_text.insert('end', 
+                    f"Saved to: {file_path}\n")
+                self.message_text.see('end')
+                
+                # Log file event
+                self.audit_log.log_event(
+                    AuditEvent(
+                        timestamp=datetime.now().timestamp(),
+                        event_type="FILE_DECRYPTED",
+                        user_id="receiver",
+                        action="decrypt_file",
+                        status="SUCCESS",
+                        details={
+                            "filename": safe_filename,
+                            "file_size": file_size,
+                            "file_type": file_type,
+                            "process_time": process_time,
+                            "total_files": self._file_count,
+                            "saved_path": file_path
+                        }
+                    )
                 )
-            )
+            else:
+                # Display decrypted message
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                self.message_text.insert('end', 
+                    f"\n[{timestamp}] Received message:\n{decrypted.decode()}\n")
+                self.message_text.see('end')
+                
+                self.status_var.set("Message received and decrypted successfully")
+                
+                # Log message event
+                self.audit_log.log_event(
+                    AuditEvent(
+                        timestamp=datetime.now().timestamp(),
+                        event_type="MESSAGE_DECRYPTED",
+                        user_id="receiver",
+                        action="decrypt_message",
+                        status="SUCCESS",
+                        details={
+                            "message_size": len(decrypted),
+                            "process_time": process_time,
+                            "total_messages": self._message_count
+                        }
+                    )
+                )
             
         except Exception as e:
             error_msg = f"Error processing message: {str(e)}"
@@ -403,6 +537,75 @@ class ReceiverGUI:
     def _refresh_logs(self):
         """Manually refresh audit logs"""
         self._update_logs()
+        
+    def _get_safe_filename(self, filename):
+        """Generate a safe filename to avoid overwriting existing files"""
+        safe_name = os.path.basename(filename)  # Remove any path components
+        
+        # Remove or replace potentially dangerous characters
+        import re
+        safe_name = re.sub(r'[<>:"/\\|?*]', '_', safe_name)
+        
+        # If file already exists, add a number suffix
+        base_path = os.path.join(self.downloads_dir, safe_name)
+        if os.path.exists(base_path):
+            name, ext = os.path.splitext(safe_name)
+            counter = 1
+            while os.path.exists(os.path.join(self.downloads_dir, f"{name}_{counter}{ext}")):
+                counter += 1
+            safe_name = f"{name}_{counter}{ext}"
+        
+        return safe_name
+        
+    def _open_downloads_folder(self):
+        """Open the downloads folder in the system file manager"""
+        try:
+            import subprocess
+            import sys
+            
+            if sys.platform == "win32":
+                os.startfile(self.downloads_dir)
+            elif sys.platform == "darwin":
+                subprocess.run(["open", self.downloads_dir])
+            else:
+                subprocess.run(["xdg-open", self.downloads_dir])
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not open downloads folder: {str(e)}")
+            
+    def _clear_file_list(self):
+        """Clear the received files list"""
+        for item in self.files_tree.get_children():
+            self.files_tree.delete(item)
+        self.file_status_var.set("File list cleared")
+        
+    def _open_selected_file(self):
+        """Open the selected file in the default system application"""
+        try:
+            selected = self.files_tree.selection()
+            if not selected:
+                messagebox.showinfo("No Selection", "Please select a file to open.")
+                return
+                
+            item = self.files_tree.item(selected[0])
+            filename = item['values'][0]
+            file_path = os.path.join(self.downloads_dir, filename)
+            
+            if not os.path.exists(file_path):
+                messagebox.showerror("File Not Found", f"File {filename} not found in downloads folder.")
+                return
+                
+            import subprocess
+            import sys
+            
+            if sys.platform == "win32":
+                os.startfile(file_path)
+            elif sys.platform == "darwin":
+                subprocess.run(["open", file_path])
+            else:
+                subprocess.run(["xdg-open", file_path])
+                
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not open file: {str(e)}")
         
     def run(self):
         """Start the GUI"""

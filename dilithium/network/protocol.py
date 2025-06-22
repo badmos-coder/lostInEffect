@@ -7,6 +7,7 @@ from ..security.audit import SecureAuditLog, AuditEvent
 from datetime import datetime
 import struct
 import base64
+import os
 
 class CryptoNetworkProtocol:
     """Protocol for secure message transmission"""
@@ -29,6 +30,7 @@ class CryptoNetworkProtocol:
         
         # Create message dictionary
         message_dict = {
+            'type': 'message',
             'ciphertext': base64.b64encode(ciphertext).decode(),
             'nonce': base64.b64encode(nonce).decode(),
             'mu': base64.b64encode(mu).decode(),
@@ -38,6 +40,36 @@ class CryptoNetworkProtocol:
         
         # Convert to JSON and encode
         return json.dumps(message_dict).encode()
+        
+    def pack_file(self, ciphertext: bytes, nonce: bytes, 
+                  signature: Tuple[bytes, np.ndarray], public_key: Dict,
+                  filename: str, file_size: int, file_type: str = None) -> bytes:
+        """Pack encrypted file data and metadata for transmission"""
+        # Convert signature components
+        mu, z = signature
+        z_bytes = z.tobytes()
+        
+        # Convert public key components
+        key_data = {
+            'seed': base64.b64encode(public_key['seed']).decode(),
+            't': [arr.tolist() for arr in public_key['t']]
+        }
+        
+        # Create file dictionary
+        file_dict = {
+            'type': 'file',
+            'filename': filename,
+            'file_size': file_size,
+            'file_type': file_type or os.path.splitext(filename)[1],
+            'ciphertext': base64.b64encode(ciphertext).decode(),
+            'nonce': base64.b64encode(nonce).decode(),
+            'mu': base64.b64encode(mu).decode(),
+            'z': base64.b64encode(z_bytes).decode(),
+            'public_key': key_data
+        }
+        
+        # Convert to JSON and encode
+        return json.dumps(file_dict).encode()
         
     def unpack_message(self, data: bytes) -> Tuple[bytes, bytes, Tuple[bytes, np.ndarray], Dict]:
         """Unpack received message into components"""
@@ -64,6 +96,48 @@ class CryptoNetworkProtocol:
             
         except Exception as e:
             raise ValueError(f"Failed to unpack message: {str(e)}")
+            
+    def unpack_data(self, data: bytes) -> Tuple[str, Dict]:
+        """Unpack received data and return type and components"""
+        try:
+            # Parse JSON data
+            data_dict = json.loads(data.decode())
+            data_type = data_dict.get('type', 'message')
+            
+            # Extract and decode components
+            ciphertext = base64.b64decode(data_dict['ciphertext'])
+            nonce = base64.b64decode(data_dict['nonce'])
+            mu = base64.b64decode(data_dict['mu'])
+            z_bytes = base64.b64decode(data_dict['z'])
+            
+            # Reconstruct z array
+            z = np.frombuffer(z_bytes, dtype=np.int32)
+            
+            # Reconstruct public key
+            public_key = {
+                'seed': base64.b64decode(data_dict['public_key']['seed']),
+                't': [np.array(t, dtype=np.int32) for t in data_dict['public_key']['t']]
+            }
+            
+            components = {
+                'ciphertext': ciphertext,
+                'nonce': nonce,
+                'signature': (mu, z),
+                'public_key': public_key
+            }
+            
+            # Add file-specific metadata if it's a file
+            if data_type == 'file':
+                components.update({
+                    'filename': data_dict['filename'],
+                    'file_size': data_dict['file_size'],
+                    'file_type': data_dict.get('file_type', '')
+                })
+            
+            return data_type, components
+            
+        except Exception as e:
+            raise ValueError(f"Failed to unpack data: {str(e)}")
 
 class MessageSender:
     """Handles sending encrypted messages"""
@@ -164,25 +238,26 @@ class MessageReceiver:
                         # Send acknowledgment
                         conn.sendall(b'OK')
                         
-                        # Process message
+                        # Process data (message or file)
                         if self.callback:
                             try:
-                                message_components = self.protocol.unpack_message(data)
-                                self.callback(message_components)
+                                data_type, components = self.protocol.unpack_data(data)
+                                self.callback(data_type, components)
                                 
                                 # Log success
+                                event_type = "FILE_RECEIVED" if data_type == "file" else "MESSAGE_RECEIVED"
                                 self.protocol.audit_log.log_event(
                                     AuditEvent(
                                         timestamp=datetime.now().timestamp(),
-                                        event_type="MESSAGE_RECEIVED",
+                                        event_type=event_type,
                                         user_id="receiver",
-                                        action="receive_message",
+                                        action=f"receive_{data_type}",
                                         status="SUCCESS",
-                                        details={"from": addr[0]}
+                                        details={"from": addr[0], "type": data_type}
                                     )
                                 )
                             except Exception as e:
-                                print(f"Error processing message: {e}")
+                                print(f"Error processing {data_type}: {e}")
                     
             except Exception as e:
                 if self.running:
