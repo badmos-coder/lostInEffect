@@ -7,3 +7,4 @@ dilithium/chaos/__pycache__/
 dilithium/core/__pycache__/
 secure_audit.log
 received_files/
+__pycache__/
