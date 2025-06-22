@@ -178,11 +178,14 @@ class HybridEncryption:
             print(f"6. Decrypted message size: {len(decrypted)} bytes")
             
             # Verify decryption succeeded
+            print(f"7. Successfully decrypted data ({len(decrypted)} bytes)")
+            
+            # Try to decode as UTF-8 for logging, but don't fail if it's binary data
             try:
                 decrypted.decode('utf-8')
-                print("7. Successfully decoded message as UTF-8")
+                print("   Data appears to be valid UTF-8 text")
             except UnicodeDecodeError:
-                raise ValueError("Decryption failed - output is not valid UTF-8")
+                print("   Data appears to be binary (not UTF-8 text)")
                 
             return decrypted
             

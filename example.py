@@ -11,8 +11,9 @@ from dilithium.config import SecurityConfig
 from dilithium.network.protocol import CryptoNetworkProtocol, MessageSender
 from dilithium.security.audit import SecureAuditLog
 import tkinter as tk
-from tkinter import ttk, scrolledtext
+from tkinter import ttk, scrolledtext, filedialog, messagebox
 from datetime import datetime
+import os
 
 class DilithiumGUI:
     def __init__(self, hybrid: HybridEncryption, monitoring: MonitoringSystem, health: HealthCheck):
@@ -64,6 +65,20 @@ class DilithiumGUI:
         self.message_text = tk.Text(msg_frame, height=4)
         self.message_text.pack(fill='x', padx=5, pady=5)
         
+        # File selection frame
+        file_frame = ttk.LabelFrame(parent, text="File Selection", padding=15)
+        file_frame.pack(fill='x', padx=10, pady=5)
+        
+        file_select_frame = ttk.Frame(file_frame)
+        file_select_frame.pack(fill='x', padx=5, pady=5)
+        
+        ttk.Button(file_select_frame, text="Select File",
+                  command=self._select_file).pack(side='left', padx=5)
+        
+        self.file_path_var = tk.StringVar(value="No file selected")
+        ttk.Label(file_select_frame, textvariable=self.file_path_var,
+                 relief='sunken', width=60).pack(side='left', padx=5, fill='x', expand=True)
+        
         # Network frame
         network_frame = ttk.LabelFrame(parent, text="Network Transmission", padding=15)
         network_frame.pack(fill='x', padx=10, pady=5)
@@ -82,8 +97,10 @@ class DilithiumGUI:
         button_frame = ttk.Frame(parent)
         button_frame.pack(fill='x', padx=10, pady=5)
         
-        ttk.Button(button_frame, text="Encrypt & Send",
-                  command=self._encrypt_and_send).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="Encrypt & Send Message",
+                  command=self._encrypt_and_send_message).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="Encrypt & Send File",
+                  command=self._encrypt_and_send_file).pack(side='left', padx=5)
         
         # Output frame
         output_frame = ttk.LabelFrame(parent, text="Output", padding=15)
@@ -112,11 +129,51 @@ class DilithiumGUI:
         except Exception as e:
             self.output_text.insert('end', f"\nError generating keys: {str(e)}\n")
             
-    def _encrypt_and_send(self):
+    def _select_file(self):
+        """Select a file for encryption and transmission"""
+        try:
+            file_path = filedialog.askopenfilename(
+                title="Select file to encrypt and send",
+                filetypes=[
+                    ("All files", "*.*"),
+                    ("Text files", "*.txt"),
+                    ("Image files", "*.png *.jpg *.jpeg *.gif *.bmp"),
+                    ("Document files", "*.pdf *.doc *.docx"),
+                    ("Archive files", "*.zip *.rar *.7z")
+                ]
+            )
+            
+            if file_path:
+                self.selected_file_path = file_path
+                filename = os.path.basename(file_path)
+                file_size = os.path.getsize(file_path)
+                self.file_path_var.set(f"{filename} ({file_size:,} bytes)")
+                
+                self.output_text.insert('end', 
+                    f"\nSelected file: {filename}\n")
+                self.output_text.insert('end', 
+                    f"File size: {file_size:,} bytes\n")
+            else:
+                self.selected_file_path = None
+                self.file_path_var.set("No file selected")
+                
+        except Exception as e:
+            messagebox.showerror("File Selection Error", f"Error selecting file: {str(e)}")
+            
+    def _encrypt_and_send_message(self):
         """Encrypt message and send over network"""
         try:
+            # Check if keys are generated
+            if not hasattr(self, 'private_key') or not self.private_key:
+                messagebox.showwarning("No Keys", "Please generate keys first.")
+                return
+                
             # Get message
             message = self.message_text.get('1.0', 'end-1c').encode()
+            
+            if not message.strip():
+                messagebox.showwarning("Empty Message", "Please enter a message to send.")
+                return
             
             self.output_text.insert('end', 
                 f"\nStarting encryption process for message of size {len(message)} bytes...\n")
@@ -162,6 +219,77 @@ class DilithiumGUI:
         except Exception as e:
             self.output_text.insert('end', 
                 f"\nError encrypting/sending message: {str(e)}\n")
+                
+    def _encrypt_and_send_file(self):
+        """Encrypt file and send over network"""
+        try:
+            # Check if file is selected
+            if not hasattr(self, 'selected_file_path') or not self.selected_file_path:
+                messagebox.showwarning("No File Selected", "Please select a file to encrypt and send.")
+                return
+                
+            # Check if keys are generated
+            if not hasattr(self, 'private_key') or not self.private_key:
+                messagebox.showwarning("No Keys", "Please generate keys first.")
+                return
+            
+            # Read file
+            with open(self.selected_file_path, 'rb') as f:
+                file_data = f.read()
+            
+            filename = os.path.basename(self.selected_file_path)
+            file_size = len(file_data)
+            
+            self.output_text.insert('end', 
+                f"\nStarting encryption process for file '{filename}' ({file_size:,} bytes)...\n")
+            
+            # Encrypt and sign file data
+            start_time = datetime.now()
+            ciphertext, nonce, signature = self.hybrid.encrypt_and_sign(
+                file_data, self.private_key)
+            end_time = datetime.now()
+            
+            self.output_text.insert('end',
+                f"File encryption completed in {(end_time-start_time).total_seconds():.3f} seconds\n")
+            self.output_text.insert('end',
+                f"Encrypted file size: {len(ciphertext)} bytes\n")
+            
+            # Verify encryption worked
+            try:
+                decrypted = self.hybrid.verify_and_decrypt(
+                    ciphertext, nonce, signature, self.public_key)
+                if decrypted != file_data:
+                    raise ValueError("File encryption verification failed")
+                self.output_text.insert('end', "File encryption verified successfully\n")
+            except Exception as e:
+                raise ValueError(f"File encryption verification failed: {str(e)}")
+            
+            # Get network settings
+            host = self.host_entry.get()
+            port = int(self.port_entry.get())
+            
+            # Update sender configuration
+            self.sender.host = host
+            self.sender.port = port
+            
+            # Pack and send file
+            file_message_data = self.protocol.pack_file(
+                ciphertext, nonce, signature, self.public_key,
+                filename, file_size, os.path.splitext(filename)[1])
+            self.sender.send_message(file_message_data)
+            
+            self.output_text.insert('end', 
+                f"File '{filename}' encrypted and sent to {host}:{port}\n")
+            self.output_text.see('end')
+            
+        except FileNotFoundError:
+            messagebox.showerror("File Error", "Selected file not found. Please select a valid file.")
+        except PermissionError:
+            messagebox.showerror("Permission Error", "Permission denied reading the file.")
+        except Exception as e:
+            self.output_text.insert('end', 
+                f"\nError encrypting/sending file: {str(e)}\n")
+            messagebox.showerror("Encryption Error", f"Error encrypting/sending file: {str(e)}")
             
     def _update_status(self):
         """Update monitoring status"""
