@@ -7,3 +7,10 @@ dilithium/chaos/__pycache__/
 dilithium/core/__pycache__/
 secure_audit.log
 received_files/
+dilithium/__pycache__
+dilithium/network/__pycache__
+dilithium/security/__pycache__
+dilithium/monitoring/__pycache__
+dilithium/config/__pycache__
+dilithium/chaos/__pycache__
+dilithium/core/__pycache__
