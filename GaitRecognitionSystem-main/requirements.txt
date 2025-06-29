@@ -1,0 +1,29 @@
+# Usage: pip install -r requirements.txt --no-deps
+
+
+av
+Flask
+Flask_Toastr
+gitpython
+ipython
+kornia
+matplotlib
+numpy
+opencv-python
+pandas
+pims
+Pillow
+psutil  # system resources
+PyYAML
+requests
+scipy
+seaborn
+tqdm
+torch # see https://pytorch.org/get-started/locally (recommended)
+torchvision>=0.22.1
+tensorboard
+Werkzeug
+#pip install git+https://github.com/jrosebr1/imutils.git
+#pip install git+https://github.com/soft-matter/pims.git
+
+# ultralytics # YOLOv8
