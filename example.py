@@ -10,10 +10,13 @@ from dilithium.monitoring.health import HealthCheck
 from dilithium.config import SecurityConfig
 from dilithium.network.protocol import CryptoNetworkProtocol, MessageSender
 from dilithium.security.audit import SecureAuditLog
+from dilithium.file_operations import FileEncryptionManager
 import tkinter as tk
 from tkinter import ttk, scrolledtext, filedialog, messagebox
 from datetime import datetime
 import os
+import threading
+import json
 
 class DilithiumGUI:
     def __init__(self, hybrid: HybridEncryption, monitoring: MonitoringSystem, health: HealthCheck):
@@ -32,6 +35,9 @@ class DilithiumGUI:
         self.protocol = CryptoNetworkProtocol(self.audit_log)
         self.sender = MessageSender(self.protocol)
         
+        # Initialize file encryption manager
+        self.file_manager = FileEncryptionManager(hybrid)
+        
         # Setup GUI
         self._setup_gui()
         
@@ -42,12 +48,15 @@ class DilithiumGUI:
         
         # Create tabs
         encryption_tab = ttk.Frame(notebook)
+        automated_tab = ttk.Frame(notebook)
         monitoring_tab = ttk.Frame(notebook)
         
-        notebook.add(encryption_tab, text='Encryption')
+        notebook.add(encryption_tab, text='Manual Mode')
+        notebook.add(automated_tab, text='Automated Mode')
         notebook.add(monitoring_tab, text='Monitoring')
         
         self._setup_encryption_tab(encryption_tab)
+        self._setup_automated_tab(automated_tab)
         self._setup_monitoring_tab(monitoring_tab)
         
     def _setup_encryption_tab(self, parent):
@@ -108,6 +117,121 @@ class DilithiumGUI:
         
         self.output_text = scrolledtext.ScrolledText(output_frame, height=10)
         self.output_text.pack(fill='both', expand=True, padx=5, pady=5)
+        
+    def _setup_automated_tab(self, parent):
+        # Create main notebook for different automated operations
+        auto_notebook = ttk.Notebook(parent)
+        auto_notebook.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        # Message Automation Tab
+        message_frame = ttk.Frame(auto_notebook)
+        auto_notebook.add(message_frame, text='Message Automation')
+        self._setup_message_automation(message_frame)
+        
+        # File Operations Tab
+        folder_frame = ttk.Frame(auto_notebook)
+        auto_notebook.add(folder_frame, text='Batch File Operations')
+        self._setup_folder_operations(folder_frame)
+        
+    def _setup_message_automation(self, parent):
+        # Auto key generation checkbox
+        auto_key_frame = ttk.LabelFrame(parent, text="Auto Key Generation", padding=10)
+        auto_key_frame.pack(fill='x', padx=10, pady=5)
+        
+        self.auto_generate_keys_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(auto_key_frame, text="Automatically generate keys for each operation", 
+                       variable=self.auto_generate_keys_var).pack(side='left', padx=5)
+        
+        # Message frame with auto encryption
+        msg_frame = ttk.LabelFrame(parent, text="Auto Encrypt & Send Message", padding=15)
+        msg_frame.pack(fill='x', padx=10, pady=5)
+        
+        self.auto_message_text = tk.Text(msg_frame, height=4)
+        self.auto_message_text.pack(fill='x', padx=5, pady=5)
+        
+        # Auto buttons
+        auto_button_frame = ttk.Frame(msg_frame)
+        auto_button_frame.pack(fill='x', padx=5, pady=5)
+        
+        ttk.Button(auto_button_frame, text="Auto Encrypt & Store",
+                  command=self._auto_encrypt_store_message).pack(side='left', padx=5)
+        ttk.Button(auto_button_frame, text="Auto Encrypt & Send",
+                  command=self._auto_encrypt_send_message).pack(side='left', padx=5)
+        
+        # Auto output
+        auto_output_frame = ttk.LabelFrame(parent, text="Auto Operation Output", padding=15)
+        auto_output_frame.pack(fill='both', expand=True, padx=10, pady=5)
+        
+        self.auto_message_output = scrolledtext.ScrolledText(auto_output_frame, height=8)
+        self.auto_message_output.pack(fill='both', expand=True, padx=5, pady=5)
+        
+    def _setup_folder_operations(self, parent):
+        # Folder selection frame
+        folder_frame = ttk.LabelFrame(parent, text="Folder Selection", padding=15)
+        folder_frame.pack(fill='x', padx=10, pady=5)
+        
+        # Input folder selection
+        input_folder_frame = ttk.Frame(folder_frame)
+        input_folder_frame.pack(fill='x', pady=5)
+        
+        ttk.Label(input_folder_frame, text="Source Folder (files to encrypt):").pack(side='left', padx=5)
+        self.input_folder_var = tk.StringVar(value="No folder selected")
+        self.input_folder_label = ttk.Label(input_folder_frame, 
+                                          textvariable=self.input_folder_var,
+                                          relief='sunken', width=50)
+        self.input_folder_label.pack(side='left', padx=5, fill='x', expand=True)
+        ttk.Button(input_folder_frame, text="Browse...", 
+                  command=self._select_input_folder).pack(side='right', padx=5)
+        
+        # Output folder selection
+        output_folder_frame = ttk.Frame(folder_frame)
+        output_folder_frame.pack(fill='x', pady=5)
+        
+        ttk.Label(output_folder_frame, text="Destination Folder (for encrypted files):").pack(side='left', padx=5)
+        self.output_folder_var = tk.StringVar(value="No folder selected")
+        self.output_folder_label = ttk.Label(output_folder_frame, 
+                                           textvariable=self.output_folder_var,
+                                           relief='sunken', width=50)
+        self.output_folder_label.pack(side='left', padx=5, fill='x', expand=True)
+        ttk.Button(output_folder_frame, text="Browse...", 
+                  command=self._select_output_folder).pack(side='right', padx=5)
+        
+        # Info frame
+        info_frame = ttk.LabelFrame(parent, text="How it works", padding=10)
+        info_frame.pack(fill='x', padx=10, pady=5)
+        
+        info_text = ("📁 Encrypts each individual file within the selected folder\n"
+                    "🔒 Each file becomes a separate .encrypted file\n"
+                    "🗂️ Preserves folder structure in the destination\n"
+                    "🔑 Automatically generates keys for each operation")
+        ttk.Label(info_frame, text=info_text, justify='left').pack(side='left', padx=5)
+        
+        # Operation buttons
+        operation_frame = ttk.Frame(parent)
+        operation_frame.pack(fill='x', padx=10, pady=10)
+        
+        ttk.Button(operation_frame, text="Encrypt All Files in Folder", 
+                  command=self._auto_encrypt_folder).pack(side='left', padx=5)
+        ttk.Button(operation_frame, text="Decrypt All Files in Folder", 
+                  command=self._auto_decrypt_folder).pack(side='left', padx=5)
+        
+        # Progress frame
+        progress_frame = ttk.LabelFrame(parent, text="Operation Progress", padding=15)
+        progress_frame.pack(fill='x', padx=10, pady=5)
+        
+        self.folder_status_var = tk.StringVar(value="Ready")
+        self.folder_status_label = ttk.Label(progress_frame, textvariable=self.folder_status_var)
+        self.folder_status_label.pack(side='left', padx=5)
+        
+        self.folder_progress = ttk.Progressbar(progress_frame, length=400, mode='determinate')
+        self.folder_progress.pack(side='right', padx=5)
+        
+        # Folder operations output
+        folder_output_frame = ttk.LabelFrame(parent, text="Folder Operation Output", padding=15)
+        folder_output_frame.pack(fill='both', expand=True, padx=10, pady=5)
+        
+        self.folder_output_text = scrolledtext.ScrolledText(folder_output_frame, height=8)
+        self.folder_output_text.pack(fill='both', expand=True, padx=5, pady=5)
         
     def _setup_monitoring_tab(self, parent):
         # Add monitoring widgets
@@ -379,6 +503,235 @@ class DilithiumGUI:
         finally:
             # Auto-scroll process log
             self.process_text.see('end')
+    
+    # New automated methods for file and folder operations
+    def _auto_encrypt_store_message(self):
+        """Auto encrypt message and store locally"""
+        try:
+            message = self.auto_message_text.get('1.0', 'end-1c').encode()
+            
+            if not message.strip():
+                messagebox.showwarning("Empty Message", "Please enter a message to encrypt.")
+                return
+            
+            # Auto generate keys if enabled
+            if self.auto_generate_keys_var.get():
+                self.auto_message_output.insert('end', "Auto-generating keys...\n")
+                self.public_key, self.private_key = self.hybrid.generate_keys()
+                self.auto_message_output.insert('end', "Keys generated successfully!\n")
+            elif not hasattr(self, 'private_key'):
+                messagebox.showwarning("No Keys", "Please generate keys first or enable auto-generation.")
+                return
+            
+            # Encrypt message
+            self.auto_message_output.insert('end', f"Encrypting message ({len(message)} bytes)...\n")
+            start_time = datetime.now()
+            ciphertext, nonce, signature = self.hybrid.encrypt_and_sign(message, self.private_key)
+            end_time = datetime.now()
+            
+            # Save to file
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"encrypted_message_{timestamp}.json"
+            
+            encrypted_data = {
+                'ciphertext': ciphertext.hex(),
+                'nonce': nonce.hex(),
+                'signature': {
+                    'mu': signature[0].hex(),
+                    'z': signature[1].tolist()
+                },
+                'public_key': {
+                    'seed': self.public_key['seed'].hex(),
+                    't': self.public_key['t'].tolist()
+                },
+                'encrypted_at': datetime.now().isoformat(),
+                'message_size': len(message)
+            }
+            
+            with open(filename, 'w') as f:
+                json.dump(encrypted_data, f, indent=2)
+            
+            self.auto_message_output.insert('end', 
+                f"Message encrypted and saved to '{filename}' in {(end_time-start_time).total_seconds():.3f}s\n")
+            self.auto_message_output.insert('end', f"Ciphertext size: {len(ciphertext)} bytes\n\n")
+            self.auto_message_output.see('end')
+            
+        except Exception as e:
+            self.auto_message_output.insert('end', f"Error: {str(e)}\n")
+            
+    def _auto_encrypt_send_message(self):
+        """Auto encrypt message and send over network"""
+        try:
+            message = self.auto_message_text.get('1.0', 'end-1c').encode()
+            
+            if not message.strip():
+                messagebox.showwarning("Empty Message", "Please enter a message to send.")
+                return
+            
+            # Auto generate keys if enabled
+            if self.auto_generate_keys_var.get():
+                self.auto_message_output.insert('end', "Auto-generating keys...\n")
+                self.public_key, self.private_key = self.hybrid.generate_keys()
+                self.auto_message_output.insert('end', "Keys generated successfully!\n")
+            elif not hasattr(self, 'private_key'):
+                messagebox.showwarning("No Keys", "Please generate keys first or enable auto-generation.")
+                return
+            
+            # Encrypt and send
+            self.auto_message_output.insert('end', f"Auto-encrypting and sending message ({len(message)} bytes)...\n")
+            start_time = datetime.now()
+            ciphertext, nonce, signature = self.hybrid.encrypt_and_sign(message, self.private_key)
+            end_time = datetime.now()
+            
+            self.auto_message_output.insert('end',
+                f"Encryption completed in {(end_time-start_time).total_seconds():.3f} seconds\n")
+            self.auto_message_output.insert('end',
+                f"Ciphertext size: {len(ciphertext)} bytes\n")
+            
+            # Send over network
+            host = self.host_entry.get() or 'localhost'
+            port = int(self.port_entry.get() or '5000')
+            
+            # Pack and send message
+            message_data = self.protocol.pack_message(
+                ciphertext, nonce, signature, self.public_key)
+            self.sender.send_message(message_data)
+            
+            self.auto_message_output.insert('end', f"Message sent successfully to {host}:{port}\n\n")
+            self.auto_message_output.see('end')
+            
+        except Exception as e:
+            self.auto_message_output.insert('end', f"Error: {str(e)}\n")
+    
+    def _select_input_folder(self):
+        """Select input folder for encryption"""
+        folder_path = filedialog.askdirectory(title="Select Input Folder")
+        if folder_path:
+            self.selected_input_folder = folder_path
+            folder_name = os.path.basename(folder_path)
+            self.input_folder_var.set(f"{folder_name} ({folder_path})")
+            
+            # Count files in folder
+            files = self.file_manager.get_files_in_folder(folder_path)
+            self.folder_output_text.insert('end', f"Selected input folder: {folder_path}\n")
+            self.folder_output_text.insert('end', f"Found {len(files)} files to process\n\n")
+        else:
+            self.selected_input_folder = None
+            self.input_folder_var.set("No folder selected")
+    
+    def _select_output_folder(self):
+        """Select output folder for encrypted files"""
+        folder_path = filedialog.askdirectory(title="Select Output Folder")
+        if folder_path:
+            self.selected_output_folder = folder_path
+            folder_name = os.path.basename(folder_path)
+            self.output_folder_var.set(f"{folder_name} ({folder_path})")
+            self.folder_output_text.insert('end', f"Selected output folder: {folder_path}\n\n")
+        else:
+            self.selected_output_folder = None
+            self.output_folder_var.set("No folder selected")
+    
+    def _auto_encrypt_folder(self):
+        """Auto encrypt entire folder with automatic key generation"""
+        try:
+            if not hasattr(self, 'selected_input_folder') or not self.selected_input_folder:
+                messagebox.showwarning("No Input Folder", "Please select an input folder first.")
+                return
+            
+            if not hasattr(self, 'selected_output_folder') or not self.selected_output_folder:
+                messagebox.showwarning("No Output Folder", "Please select an output folder first.")
+                return
+            
+            # Setup progress callbacks
+            self.file_manager.set_callbacks(
+                lambda value: self.folder_progress.configure(value=value),
+                lambda message: self.folder_status_var.set(message)
+            )
+            
+            def run_encryption():
+                try:
+                    self.folder_output_text.insert('end', "=== Starting Individual File Encryption ===\n")
+                    self.folder_output_text.insert('end', f"Source folder: {self.selected_input_folder}\n")
+                    self.folder_output_text.insert('end', f"Destination folder: {self.selected_output_folder}\n")
+                    self.folder_output_text.insert('end', "Processing: Each file will be encrypted separately\n\n")
+                    self.folder_output_text.see('end')
+                    
+                    result = self.file_manager.encrypt_folder(
+                        self.selected_input_folder, 
+                        self.selected_output_folder, 
+                        auto_generate_keys=True
+                    )
+                    
+                    if result['status'] == 'success':
+                        self.folder_output_text.insert('end', "\n=== Encryption Summary ===\n")
+                        self.folder_output_text.insert('end', f"Total files: {result['total_files']}\n")
+                        self.folder_output_text.insert('end', f"Successfully encrypted: {result['successful']}\n")
+                        self.folder_output_text.insert('end', f"Failed: {result['failed']}\n")
+                        self.folder_output_text.insert('end', f"Summary saved to: {result['summary_file']}\n")
+                    else:
+                        self.folder_output_text.insert('end', f"\nEncryption failed: {result['error']}\n")
+                    
+                    self.folder_output_text.see('end')
+                    
+                except Exception as e:
+                    self.folder_output_text.insert('end', f"\nError during encryption: {str(e)}\n")
+                    self.folder_status_var.set("Error")
+            
+            # Run in separate thread
+            threading.Thread(target=run_encryption, daemon=True).start()
+            
+        except Exception as e:
+            messagebox.showerror("Encryption Error", f"Error starting encryption: {str(e)}")
+    
+    def _auto_decrypt_folder(self):
+        """Auto decrypt entire folder of encrypted files"""
+        try:
+            if not hasattr(self, 'selected_input_folder') or not self.selected_input_folder:
+                messagebox.showwarning("No Input Folder", "Please select an input folder with encrypted files first.")
+                return
+            
+            if not hasattr(self, 'selected_output_folder') or not self.selected_output_folder:
+                messagebox.showwarning("No Output Folder", "Please select an output folder for decrypted files first.")
+                return
+            
+            # Setup progress callbacks
+            self.file_manager.set_callbacks(
+                lambda value: self.folder_progress.configure(value=value),
+                lambda message: self.folder_status_var.set(message)
+            )
+            
+            def run_decryption():
+                try:
+                    self.folder_output_text.insert('end', "=== Starting Individual File Decryption ===\n")
+                    self.folder_output_text.insert('end', f"Source folder: {self.selected_input_folder}\n")
+                    self.folder_output_text.insert('end', f"Destination folder: {self.selected_output_folder}\n")
+                    self.folder_output_text.insert('end', "Processing: Each .encrypted file will be decrypted separately\n\n")
+                    self.folder_output_text.see('end')
+                    
+                    result = self.file_manager.decrypt_folder(
+                        self.selected_input_folder, 
+                        self.selected_output_folder
+                    )
+                    
+                    if result['status'] == 'success':
+                        self.folder_output_text.insert('end', "\n=== Decryption Summary ===\n")
+                        self.folder_output_text.insert('end', f"Total encrypted files: {result['total_files']}\n")
+                        self.folder_output_text.insert('end', f"Successfully decrypted: {result['successful']}\n")
+                        self.folder_output_text.insert('end', f"Failed: {result['failed']}\n")
+                    else:
+                        self.folder_output_text.insert('end', f"\nDecryption failed: {result['error']}\n")
+                    
+                    self.folder_output_text.see('end')
+                    
+                except Exception as e:
+                    self.folder_output_text.insert('end', f"\nError during decryption: {str(e)}\n")
+                    self.folder_status_var.set("Error")
+            
+            # Run in separate thread
+            threading.Thread(target=run_decryption, daemon=True).start()
+            
+        except Exception as e:
+            messagebox.showerror("Decryption Error", f"Error starting decryption: {str(e)}")
             
     def run(self):
         """Start the GUI"""

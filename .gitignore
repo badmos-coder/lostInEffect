@@ -14,3 +14,4 @@ dilithium/monitoring/__pycache__
 dilithium/config/__pycache__
 dilithium/chaos/__pycache__
 dilithium/core/__pycache__
+__pycache__/
