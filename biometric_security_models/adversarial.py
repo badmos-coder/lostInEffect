@@ -1,6 +1,6 @@
 import numpy as np
 from tensorflow import keras
-from tensorflow.keras import layers
+from keras import layers
 from utils import preprocess_image
 
 

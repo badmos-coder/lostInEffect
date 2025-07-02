@@ -1,0 +1,59 @@
+# Usage: pip install -r requirements.txt --no-deps
+
+
+
+#create a venv : python3.11 -m venv CSGC_2.0
+
+#if you have 2 different versions of python installed the use : py -3.11 -m venv CSGC_2.0
+
+# IMPORTENT : tenserflow and torchversion can't be run on the LTS version of the python 3.13.x...
+
+
+#activate your venv(virtual env) : 
+            # Windows : `.\CSGC_2.0\Scripts\activate`    -------> for deactivation : `deactivate`
+            # macOS/Linux : `source CSGC_2.0/bin/activate ` -----> for deactivation : `deactivate`
+
+# requirements for the models
+
+
+numpy
+tensorflow
+opencv-python
+scikit-learn
+librosa
+pandas
+matplotlib
+pillow
+jupyter
+notebook
+tqdm
+seaborn
+
+# requirements for fingerprintcryptor
+
+pyserial
+requests
+
+# REQUIREMENTS FOR GaitRecognitionSystem
+
+
+
+av
+Flask
+Flask_Toastr
+gitpython
+ipython
+kornia
+pims
+Pillow
+psutil  # system resources
+PyYAML
+scipy
+torch # see https://pytorch.org/get-started/locally (recommended)
+torchvision
+tensorboard
+Werkzeug
+#pip install git+https://github.com/jrosebr0/imutils.git
+#pip install git+https://github.com/soft-matter/pims.git
+
+# ultralytics # YOLOv7

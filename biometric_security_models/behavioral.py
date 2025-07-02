@@ -1,6 +1,6 @@
 import numpy as np
 from tensorflow import keras
-from tensorflow.keras import layers
+from keras import layers
 from sklearn.ensemble import IsolationForest
 
 class BehavioralAnalytics:
