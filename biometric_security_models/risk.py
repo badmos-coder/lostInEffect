@@ -1,53 +1,26 @@
 import time
-import numpy as np
-from tensorflow import keras
-from keras import layers
-
 
 class RealTimeRiskScorer:
     def __init__(self):
-        self.model = self._build_model()
         self.historical_patterns = {}
 
-    def _build_model(self):
-        model = keras.Sequential([
-            layers.Dense(128, activation='relu', input_shape=(20,)),
-            layers.Dense(64, activation='relu'),
-            layers.Dense(1, activation='sigmoid')
-        ])
-        model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-        return model
-
-    def calculate_risk_score(self, user_id, biometric_data, context_data, auth_score):
-        features = self._extract_features(user_id, context_data, auth_score)
-        ml_score = self.model.predict(features)[0][0]
+    def calculate_risk_score(self, user_id, context_data, auth_score):
         context_risk = self._contextual_risk(context_data)
         time_risk = self._temporal_risk(user_id)
 
-        final_score = 0.5 * ml_score + 0.3 * context_risk + 0.2 * time_risk
+        # Simple weighted average for demonstration
+        final_score = 0.6 * context_risk + 0.2 * time_risk + 0.2 * (1 - auth_score)
+        final_score = max(0.0, min(1.0, final_score))
+
         return {
             "overall_risk": final_score,
-            "ml_risk": ml_score,
-            "contextual_risk": context_risk,
-            "temporal_risk": time_risk,
+            "details": {
+                "contextual_risk": context_risk,
+                "temporal_risk": time_risk,
+                "authentication_score_impact": (1 - auth_score)
+            },
             "risk_level": self._categorize(final_score)
         }
-
-    def _extract_features(self, user_id, context, auth_score):
-        hour = time.localtime().tm_hour
-        features = [
-            auth_score,
-            hour / 24.0,
-            int(9 <= hour <= 17),
-            int(hour < 6 or hour > 22),
-            context.get('location_change', 0),
-            context.get('device_change', 0),
-            context.get('network_change', 0),
-            context.get('failed_attempts', 0) / 10.0
-        ]
-        while len(features) < 20:
-            features.append(0.0)
-        return np.array(features[:20]).reshape(1, -1)
 
     def _contextual_risk(self, context):
         risk = 0
@@ -60,9 +33,15 @@ class RealTimeRiskScorer:
     def _temporal_risk(self, user_id):
         hour = time.localtime().tm_hour
         if user_id not in self.historical_patterns:
-            return 0.5
-        typical = self.historical_patterns[user_id].get('typical_hours', [])
-        return 0.1 if hour in typical else 0.8
+            # On first sight, assign a medium risk
+            self.historical_patterns[user_id] = {'typical_hours': [hour]}
+            return 0.4
+        
+        typical_hours = self.historical_patterns[user_id].get('typical_hours', [])
+        if hour not in typical_hours:
+            return 0.8 # High risk for unusual hour
+        else:
+            return 0.1 # Low risk for typical hour
 
     def _categorize(self, score):
         if score < 0.3: return "LOW"
